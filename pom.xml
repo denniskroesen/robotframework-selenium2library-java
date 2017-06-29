@@ -56,6 +56,12 @@
 			<version>1.2.1</version>
 		</dependency>
 		<dependency>
+			<groupId>net.lightbody.bmp</groupId>
+			<artifactId>browsermob-core</artifactId>
+			<version>2.1.4</version>
+		</dependency>
+
+		<dependency>
 			<groupId>com.github.markusbernhardt</groupId>
 			<artifactId>xml-doclet</artifactId>
 			<version>${xml.doclet.version}</version>

@@ -1,6 +1,8 @@
 package com.github.markusbernhardt.selenium2library.keywords;
 
 import io.appium.java_client.ios.IOSDriver;
+import io.netty.handler.codec.http.HttpRequest;
+import io.netty.handler.codec.http.HttpResponse;
 import io.selendroid.client.SelendroidDriver;
 
 import java.io.File;
@@ -16,6 +18,12 @@ import java.util.List;
 import java.util.Map.Entry;
 import java.util.concurrent.TimeUnit;
 
+import net.lightbody.bmp.BrowserMobProxy;
+import net.lightbody.bmp.BrowserMobProxyServer;
+import net.lightbody.bmp.client.ClientUtil;
+import net.lightbody.bmp.filters.RequestFilter;
+import net.lightbody.bmp.util.HttpMessageContents;
+import net.lightbody.bmp.util.HttpMessageInfo;
 import org.apache.http.HttpHost;
 import org.apache.http.auth.AuthScope;
 import org.apache.http.auth.NTCredentials;
@@ -27,6 +35,7 @@ import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.JSONValue;
 import org.openqa.selenium.Dimension;
+import org.openqa.selenium.Proxy;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.chrome.ChromeDriver;
@@ -35,10 +44,7 @@ import org.openqa.selenium.firefox.FirefoxProfile;
 import org.openqa.selenium.htmlunit.HtmlUnitDriver;
 import org.openqa.selenium.ie.InternetExplorerDriver;
 import org.openqa.selenium.phantomjs.PhantomJSDriver;
-import org.openqa.selenium.remote.Augmenter;
-import org.openqa.selenium.remote.DesiredCapabilities;
-import org.openqa.selenium.remote.HttpCommandExecutor;
-import org.openqa.selenium.remote.RemoteWebDriver;
+import org.openqa.selenium.remote.*;
 import org.openqa.selenium.safari.SafariDriver;
 import org.robotframework.javalib.annotation.ArgumentNames;
 import org.robotframework.javalib.annotation.Autowired;
@@ -1576,4 +1582,106 @@ public class BrowserManagement extends RunOnFailureKeywordsAdapter {
 		}
 		return items;
 	}
+
+	@RobotKeyword
+	@ArgumentNames({"url", "browserName=firefox", "token=None"})
+	public void openBrowserWithToken(String url, String browserName, String token) {
+		this.openBrowserWithTokenString(url, browserName, token);
+	}
+
+	private String openBrowserWithTokenString(String url, String browserName, String token) {
+		try {
+			WebDriver webDriver = createWebDriverToken(browserName, token, null, null, null);
+			webDriver.get(url);
+			String sessionId = webDriverCache.register(webDriver, "None");//TODO: remove hardcoding
+			return sessionId;
+		} catch (Throwable t) {
+			throw new Selenium2LibraryFatalException(t);
+		}
+	}
+
+	private WebDriver createWebDriverToken(String browserName, String token, String desiredCapabilitiesString, String remoteUrlString,
+										   String browserOptions) throws MalformedURLException {
+		browserName = browserName.toLowerCase().replace(" ", "");
+		DesiredCapabilities desiredCapabilities = createDesiredCapabilities(browserName, desiredCapabilitiesString,
+				browserOptions);
+
+//        WebDriver webDriver;
+//        if (remoteUrlString != null && !"False".equals(remoteUrlString)) {
+//            webDriver = createRemoteWebDriver(desiredCapabilities, new URL(remoteUrlString));
+//        } else {
+//        }
+		//TODO: add support for remote web drivers
+
+		WebDriver webDriver = createLocalWebDriverToken(browserName, desiredCapabilities, token);
+
+		webDriver.manage().timeouts().setScriptTimeout((int) (timeout * 1000.0), TimeUnit.MILLISECONDS);
+		webDriver.manage().timeouts().implicitlyWait((int) (implicitWait * 1000.0), TimeUnit.MILLISECONDS);
+
+		return webDriver;
+	}
+
+	private WebDriver createLocalWebDriverToken(final String browserName, final DesiredCapabilities desiredCapabilities, final String token) {
+		if ("ff".equals(browserName) || "firefox".equals(browserName)) {
+			return new FirefoxDriver(desiredCapabilities);
+		} else if ("ie".equals(browserName) || "internetexplorer".equals(browserName)) {
+			return new InternetExplorerDriver(desiredCapabilities);
+		} else if ("gc".equals(browserName) || "chrome".equals(browserName) || "googlechrome".equals(browserName)) {
+			// start the proxy
+			BrowserMobProxy proxy = new BrowserMobProxyServer();
+			proxy.start(0);
+
+			proxy.addRequestFilter(new RequestFilter() {
+				public HttpResponse filterRequest(HttpRequest request, HttpMessageContents contents, HttpMessageInfo messageInfo) {
+					request.headers().add("Authorization", token);
+					return null;
+				}
+			});
+			// get the Selenium proxy object
+			Proxy seleniumProxy = ClientUtil.createSeleniumProxy(proxy);
+
+			// configure it as a desired capability
+			DesiredCapabilities capabilities = new DesiredCapabilities();
+			capabilities.setCapability(CapabilityType.PROXY, seleniumProxy);
+
+
+//            ChromeOptions options = new ChromeOptions();
+//            String extensionPath = getClass().getResource("/ModifyHeaders.crx").getPath();
+//            options.addExtensions(new File(extensionPath));
+//            DesiredCapabilities capabilities = new DesiredCapabilities();
+//            capabilities.setCapability(ChromeOptions.CAPABILITY, options);
+			return new ChromeDriver(capabilities);
+
+//        } else if ("opera".equals(browserName)) {
+//            return new OperaDriver(desiredCapabilities);
+//        } else if ("phantomjs".equals(browserName)) {
+//            return new PhantomJSDriver(desiredCapabilities);
+//        } else if ("safari".equals(browserName)) {
+//            return new SafariDriver(desiredCapabilities);
+//        } else if ("htmlunit".equals(browserName)) {
+//            return new HtmlUnitDriver(desiredCapabilities);
+//        } else if ("htmlunitwithjs".equals(browserName)) {
+//            HtmlUnitDriver driver = new HtmlUnitDriver(desiredCapabilities);
+//            driver.setJavascriptEnabled(true);
+//            return driver;
+//        } else if ("iphone".equals(browserName) || "ipad".equals(browserName)) {
+//            try {
+//                return new IOSDriver<WebElement>(new URL(""), desiredCapabilities);
+//            } catch (Exception e) {
+//                throw new Selenium2LibraryFatalException("Creating " + browserName + " instance failed.", e);
+//            }
+//        } else if ("android".equals(browserName)) {
+//            try {
+//                return new SelendroidDriver(desiredCapabilities);
+//            } catch (Exception e) {
+//                throw new Selenium2LibraryFatalException(e);
+//            }
+		}
+
+		throw new Selenium2LibraryFatalException(browserName + " is not a supported browser.");
+	}
+
+
+
+
 }
